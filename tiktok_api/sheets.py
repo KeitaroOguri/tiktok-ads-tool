@@ -494,6 +494,7 @@ class GoogleSheetsManager:
         col_ag_id    = col_of("広告グループID")
         col_ad_id    = col_of("広告ID")
         col_err      = col_of("エラー内容")
+        col_video_id = col_of("動画素材ID")   # Drive経由アップロード時に書き戻す
 
         cells: list[gspread.Cell] = []
         for r in results:
@@ -508,6 +509,10 @@ class GoogleSheetsManager:
                 cells.append(gspread.Cell(sheet_row, col_ad_id, r.get("ad_id", "")))
             if col_err:
                 cells.append(gspread.Cell(sheet_row, col_err, r.get("error", "")))
+            # Drive経由でアップロードしたvideo_idを「動画素材ID」列に書き戻す
+            # → 次回以降はこのvideo_idを使うので再アップロード不要になる
+            if col_video_id and r.get("video_id"):
+                cells.append(gspread.Cell(sheet_row, col_video_id, r.get("video_id", "")))
 
         if cells:
             ws.update_cells(cells, value_input_option="RAW")

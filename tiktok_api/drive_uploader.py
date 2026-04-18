@@ -1,11 +1,15 @@
 """
 Google Drive動画 → TikTokクリエイティブライブラリ アップローダー
 
-【使い方】
-1. Google DriveのファイルをサービスアカウントのEmailと共有する
-   (tiktok-ads-tool@winged-vigil-371710.iam.gserviceaccount.com)
-2. スプレッドシートの「Google Drive動画URL」列にURLを貼り付ける
-3. ツールが自動でダウンロード → TikTokにアップロード → video_idを取得する
+【フロー】
+1. スプレッドシートの「動画素材ID」が入力済み → そのまま使用（アップロードなし）
+2. 「動画素材ID」が空 + 「Google Drive動画URL」がある → ダウンロード→アップロード→video_id取得
+3. 取得したvideo_idをスプレッドシートの「動画素材ID」列に書き戻す
+   → 次回以降は「動画素材ID」が埋まっているので再アップロードなし
+
+【準備】
+Google DriveのファイルをサービスアカウントのEmailと共有する（閲覧者権限でOK）
+  tiktok-ads-tool@winged-vigil-371710.iam.gserviceaccount.com
 """
 
 from __future__ import annotations
@@ -18,7 +22,7 @@ import httpx
 
 
 # -------------------------------------------------------
-# URL からファイルIDを抽出
+# Drive URL からファイルIDを抽出
 # -------------------------------------------------------
 
 def extract_drive_file_id(url: str) -> str:
@@ -41,17 +45,16 @@ def extract_drive_file_id(url: str) -> str:
             return m.group(1)
     raise ValueError(
         f"Google DriveのファイルIDを取得できませんでした。\n"
-        f"URLを確認してください: {url}\n"
+        f"URL: {url}\n"
         f"正しい形式例: https://drive.google.com/file/d/xxxxxx/view"
     )
 
 
 # -------------------------------------------------------
-# Google Drive アクセストークン取得
+# アクセストークン取得
 # -------------------------------------------------------
 
 def _get_drive_token(credentials_dict: dict) -> str:
-    """サービスアカウント認証情報からGoogle Drive用アクセストークンを取得"""
     from google.oauth2.service_account import Credentials
     import google.auth.transport.requests
 
@@ -64,42 +67,35 @@ def _get_drive_token(credentials_dict: dict) -> str:
 
 
 # -------------------------------------------------------
-# DriveUploader クラス
+# DriveUploader
 # -------------------------------------------------------
 
 class DriveUploader:
     """
     Google Drive から動画をダウンロードし TikTok にアップロードするクラス。
-    同じURLは1セッション中キャッシュして重複アップロードを防ぐ。
+    セッション内では同一URLのアップロードをメモリキャッシュで防ぐ。
     """
 
     def __init__(self, credentials_dict: dict):
         self.credentials_dict = credentials_dict
-        self._video_id_cache: dict[str, str] = {}   # drive_url → tiktok video_id
         self._token: str | None = None
+        self._cache: dict[str, str] = {}   # file_id → video_id（セッション内キャッシュ）
 
     def _access_token(self) -> str:
-        """アクセストークンを取得（キャッシュ）"""
         if not self._token:
             self._token = _get_drive_token(self.credentials_dict)
         return self._token
 
-    # -------------------------------------------------------
-    # ダウンロード
-    # -------------------------------------------------------
-
     def download_to_tempfile(self, drive_url: str) -> tuple[str, str]:
         """
-        Google Drive からファイルをダウンロードして一時ファイルに保存する。
-
-        Returns:
-            (temp_file_path, original_file_name)
+        Google Drive からダウンロードして一時ファイルに保存する。
+        Returns: (temp_file_path, original_file_name)
         """
         file_id = extract_drive_file_id(drive_url)
         token = self._access_token()
         headers = {"Authorization": f"Bearer {token}"}
 
-        # ── メタデータ取得（ファイル名・サイズ確認） ──
+        # メタデータ取得
         meta_resp = httpx.get(
             f"https://www.googleapis.com/drive/v3/files/{file_id}",
             headers=headers,
@@ -108,9 +104,9 @@ class DriveUploader:
         )
         if meta_resp.status_code == 403:
             raise PermissionError(
-                f"Google Driveファイルへのアクセス権がありません。\n"
-                f"サービスアカウント (tiktok-ads-tool@winged-vigil-371710.iam.gserviceaccount.com) "
-                f"とファイルを共有してください。\nファイルID: {file_id}"
+                f"アクセス権がありません。サービスアカウントとファイルを共有してください。\n"
+                f"tiktok-ads-tool@winged-vigil-371710.iam.gserviceaccount.com\n"
+                f"ファイルID: {file_id}"
             )
         meta_resp.raise_for_status()
         meta = meta_resp.json()
@@ -119,7 +115,6 @@ class DriveUploader:
         file_size = int(meta.get("size", 0))
         logger.info(f"Driveダウンロード開始: {file_name} ({file_size / 1024 / 1024:.1f} MB)")
 
-        # ── ダウンロード（ストリーミング） ──
         ext = Path(file_name).suffix or ".mp4"
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
         tmp_path = tmp.name
@@ -134,21 +129,17 @@ class DriveUploader:
             timeout=httpx.Timeout(connect=30.0, read=600.0, write=600.0, pool=30.0),
         ) as resp:
             if resp.status_code == 403:
-                raise PermissionError(
-                    f"ファイルのダウンロード権限がありません。ファイルID: {file_id}"
-                )
+                raise PermissionError(f"ダウンロード権限がありません。ファイルID: {file_id}")
             resp.raise_for_status()
             with open(tmp_path, "wb") as f:
                 for chunk in resp.iter_bytes(chunk_size=1024 * 1024):
                     f.write(chunk)
 
-        actual_size = os.path.getsize(tmp_path)
-        logger.success(f"✅ Driveダウンロード完了: {file_name} ({actual_size / 1024 / 1024:.1f} MB)")
+        logger.success(
+            f"✅ Driveダウンロード完了: {file_name} "
+            f"({os.path.getsize(tmp_path) / 1024 / 1024:.1f} MB)"
+        )
         return tmp_path, file_name
-
-    # -------------------------------------------------------
-    # TikTok へアップロード
-    # -------------------------------------------------------
 
     def upload_to_tiktok(
         self,
@@ -157,22 +148,18 @@ class DriveUploader:
         video_name: str | None = None,
     ) -> str:
         """
-        Google Drive動画をダウンロードして TikTok にアップロードする。
-        同じURLは2回目以降キャッシュを返す。
+        Google Drive動画をTikTokにアップロードする。
+        セッション内で同じURLが来た場合はキャッシュを返す。
 
-        Args:
-            drive_url: Google DriveのファイルURL
-            creative_manager: CreativeManager インスタンス
-            video_name: TikTok上の動画名（省略時はファイル名）
-
-        Returns:
-            TikTokのvideo_id
+        Returns: video_id
         """
-        # キャッシュヒット
-        if drive_url in self._video_id_cache:
-            cached = self._video_id_cache[drive_url]
-            logger.info(f"動画IDキャッシュ使用: {cached} ({drive_url[:60]}...)")
-            return cached
+        file_id = extract_drive_file_id(drive_url)
+
+        # セッション内キャッシュ
+        if file_id in self._cache:
+            vid = self._cache[file_id]
+            logger.info(f"セッションキャッシュヒット: video_id={vid}")
+            return vid
 
         tmp_path = None
         try:
@@ -181,16 +168,13 @@ class DriveUploader:
 
             result = creative_manager.upload_video(tmp_path, video_name=name)
             video_id = result.get("video_id", "")
-
-            if video_id:
-                self._video_id_cache[drive_url] = video_id
-                logger.success(f"✅ TikTokアップロード完了: {name} → video_id={video_id}")
-            else:
+            if not video_id:
                 raise RuntimeError("video_idが返ってきませんでした")
 
+            self._cache[file_id] = video_id
+            logger.success(f"✅ Drive→TikTok完了: {name} → video_id={video_id}")
             return video_id
 
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
-                logger.debug(f"一時ファイル削除: {tmp_path}")

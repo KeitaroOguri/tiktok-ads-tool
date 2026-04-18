@@ -123,6 +123,7 @@ class UnifiedResult:
     campaign_id: str = ""
     adgroup_id: str = ""
     ad_id: str = ""
+    video_id: str = ""      # Drive経由でアップロードした場合に格納（シートに書き戻す）
     error: str = ""
 
     def to_dict(self) -> dict:
@@ -132,6 +133,7 @@ class UnifiedResult:
             "campaign_id": self.campaign_id,
             "adgroup_id": self.adgroup_id,
             "ad_id": self.ad_id,
+            "video_id": self.video_id,
             "error": self.error,
         }
 
@@ -364,6 +366,8 @@ class BulkSubmissionProcessor:
                                 creative_manager=self.creative,
                                 video_name=ad_name,
                             )
+                            # video_idをresultに記録 → シートの「動画素材ID」列に書き戻す
+                            row_result.video_id = video_id
                             logger.success(f"✅ Drive→TikTok アップロード完了: video_id={video_id}")
 
                         payload = _build_ad_payload(row, row_result.adgroup_id, override_video_id=video_id)
