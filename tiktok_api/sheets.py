@@ -147,6 +147,16 @@ UNIFIED_COLUMNS: list[dict] = [
         "options": ["すべて", "男性", "女性"],
     },
     {
+        "name": "ターゲット地域",
+        "section": "adgroup",
+        "width": 160,
+        "note": (
+            "地域IDをカンマ区切りで入力\n"
+            "空欄 = 日本（7709）が自動セットされます\n"
+            "日本以外の例: 7709=日本, 7707=米国, 7706=英国"
+        ),
+    },
+    {
         "name": "年齢層",
         "section": "adgroup",
         "width": 200,

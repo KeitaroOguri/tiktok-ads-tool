@@ -211,8 +211,9 @@ def _build_adgroup_payload(row: pd.Series, campaign_id: str) -> dict:
         payload["schedule_end_time"] = end   # ✅ 正しいフィールド名
 
     locations = _csv(row, "ターゲット地域")
-    if locations:
-        payload["location_ids"] = locations
+    # 未入力の場合は日本（JP）をデフォルトでセット
+    # TikTok location_id: 日本 = 7709
+    payload["location_ids"] = locations if locations else ["7709"]
 
     ages = _csv(row, "年齢層")
     if ages:
