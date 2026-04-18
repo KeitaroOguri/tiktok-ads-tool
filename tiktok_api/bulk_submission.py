@@ -160,6 +160,8 @@ def _build_campaign_payload(row: pd.Series) -> dict:
 
 
 def _build_adgroup_payload(row: pd.Series, campaign_id: str) -> dict:
+    from datetime import datetime, timezone
+
     name         = _s(row, "広告グループ名")
     placement    = _map(PLACEMENT_TYPE_MAP, _s(row, "配置タイプ"),              "PLACEMENT_TYPE_AUTOMATIC")
     budget_mode  = _map(BUDGET_MODE_MAP,    _s(row, "広告グループ予算タイプ"),   "BUDGET_MODE_INFINITE")
@@ -168,12 +170,18 @@ def _build_adgroup_payload(row: pd.Series, campaign_id: str) -> dict:
     bid_type     = _map(BID_TYPE_MAP,       _s(row, "入札タイプ"),               "BID_TYPE_NO_BID")
     gender       = _map(GENDER_MAP,         _s(row, "性別"),                     "GENDER_UNLIMITED")
 
+    # schedule_start_time は必須。未入力なら現在時刻（UTC）をセット
+    start = _s(row, "開始日時")
+    if not start:
+        start = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
     payload: dict = {
         "adgroup_name": name,
         "campaign_id": campaign_id,
         "placement_type": placement,
         "budget_mode": budget_mode,
         "schedule_type": schedule,
+        "schedule_start_time": start,   # ✅ 正しいフィールド名
         "bid_type": bid_type,
     }
 
@@ -188,13 +196,10 @@ def _build_adgroup_payload(row: pd.Series, campaign_id: str) -> dict:
     if bid_price and bid_price > 0:
         payload["bid_price"] = bid_price
 
-    start = _s(row, "開始日時")
-    if start:
-        payload["start_time"] = start
-
+    # 期間指定の場合のみ終了日時をセット
     end = _s(row, "終了日時")
     if end:
-        payload["end_time"] = end
+        payload["schedule_end_time"] = end   # ✅ 正しいフィールド名
 
     locations = _csv(row, "ターゲット地域")
     if locations:
