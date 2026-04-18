@@ -162,7 +162,21 @@ UNIFIED_COLUMNS: list[dict] = [
         "name": "動画素材ID",
         "section": "ad",
         "width": 160,
-        "note": "TikTok広告管理画面の「クリエイティブ」にあるvideo_id",
+        "note": (
+            "TikTok広告管理画面の「クリエイティブ」にあるvideo_id\n"
+            "※ Google Drive動画URLを使う場合は空欄でOK"
+        ),
+    },
+    {
+        "name": "Google Drive動画URL",
+        "section": "ad",
+        "width": 240,
+        "note": (
+            "Google DriveのファイルURL（動画素材IDが空の場合に自動アップロード）\n"
+            "例: https://drive.google.com/file/d/xxxxx/view\n"
+            "⚠️ サービスアカウントとファイルを共有してください:\n"
+            "tiktok-ads-tool@winged-vigil-371710.iam.gserviceaccount.com"
+        ),
     },
     {
         "name": "サムネイル素材ID",

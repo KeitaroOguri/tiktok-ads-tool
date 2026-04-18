@@ -381,8 +381,8 @@ elif page == "📤 一括入稿":
                                 advertiser_id=selected_account["advertiser_id"],
                                 bc_name=selected_account["bc_name"],
                             )
-                            processor = BulkSubmissionProcessor(client)
                             creds = dict(st.secrets["gcp_service_account"])
+                            processor = BulkSubmissionProcessor(client, gcp_credentials=creds)
                             gsm = GoogleSheetsManager(st.session_state["preview_ss_url"], creds)
 
                             progress.progress(10, text="📁 入稿中...")

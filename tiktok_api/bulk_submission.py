@@ -11,6 +11,7 @@ import pandas as pd
 from .campaign import CampaignManager
 from .adgroup import AdGroupManager
 from .ad import AdManager
+from .creative import CreativeManager
 from .client import TikTokClient
 
 
@@ -206,10 +207,15 @@ def _build_adgroup_payload(row: pd.Series, campaign_id: str) -> dict:
     return payload
 
 
-def _build_ad_payload(row: pd.Series, adgroup_id: str) -> dict:
+def _build_ad_payload(
+    row: pd.Series,
+    adgroup_id: str,
+    override_video_id: str = "",
+) -> dict:
     name       = _s(row, "広告名")
     ad_format  = _s(row, "広告フォーマット") or "SINGLE_VIDEO"
-    video_id   = _s(row, "動画素材ID")
+    # override_video_id が指定されていればそちらを優先（Drive経由アップロード済み）
+    video_id   = override_video_id or _s(row, "動画素材ID")
     image_id   = _s(row, "サムネイル素材ID")
     ad_text    = _s(row, "広告テキスト")
     cta        = _map(CTA_MAP, _s(row, "CTA"))
@@ -244,11 +250,25 @@ def _build_ad_payload(row: pd.Series, adgroup_id: str) -> dict:
 class BulkSubmissionProcessor:
     """統合シートのデータを TikTok API へ一括入稿"""
 
-    def __init__(self, client: TikTokClient):
+    def __init__(self, client: TikTokClient, gcp_credentials: dict | None = None):
         self.client = client
-        self.cm  = CampaignManager(client)
-        self.agm = AdGroupManager(client)
-        self.am  = AdManager(client)
+        self.cm       = CampaignManager(client)
+        self.agm      = AdGroupManager(client)
+        self.am       = AdManager(client)
+        self.creative = CreativeManager(client)
+        self.gcp_credentials = gcp_credentials
+        self._drive_uploader = None
+
+    def _get_drive_uploader(self):
+        """DriveUploaderを遅延初期化して返す"""
+        if self._drive_uploader is None:
+            if not self.gcp_credentials:
+                raise RuntimeError(
+                    "Google Drive動画URLを使用するにはGCPサービスアカウント認証情報が必要です"
+                )
+            from .drive_uploader import DriveUploader
+            self._drive_uploader = DriveUploader(self.gcp_credentials)
+        return self._drive_uploader
 
     def process_unified(self, df: pd.DataFrame) -> list[UnifiedResult]:
         """
@@ -332,7 +352,21 @@ class BulkSubmissionProcessor:
                     try:
                         if not row_result.adgroup_id:
                             raise ValueError("広告グループIDが取得できていません")
-                        payload = _build_ad_payload(row, row_result.adgroup_id)
+
+                        # Google Drive動画URLがあれば先にTikTokへアップロード
+                        drive_url = _s(row, "Google Drive動画URL")
+                        video_id  = _s(row, "動画素材ID")
+                        if drive_url and not video_id:
+                            logger.info(f"Google Drive動画をアップロード中: {drive_url[:60]}...")
+                            uploader = self._get_drive_uploader()
+                            video_id = uploader.upload_to_tiktok(
+                                drive_url=drive_url,
+                                creative_manager=self.creative,
+                                video_name=ad_name,
+                            )
+                            logger.success(f"✅ Drive→TikTok アップロード完了: video_id={video_id}")
+
+                        payload = _build_ad_payload(row, row_result.adgroup_id, override_video_id=video_id)
                         ad_id = self.am.create(payload)
                         row_result.ad_id = ad_id
                         row_result.status = "success"

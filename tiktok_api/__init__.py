@@ -10,6 +10,7 @@ from .sheets import GoogleSheetsManager
 from .bulk_submission import BulkSubmissionProcessor
 from .slack_notifier import SlackNotifier
 from .api_monitor import APIFieldMonitor
+from .drive_uploader import DriveUploader
 
 __all__ = [
     "TikTokAuth",
@@ -24,4 +25,5 @@ __all__ = [
     "BulkSubmissionProcessor",
     "SlackNotifier",
     "APIFieldMonitor",
+    "DriveUploader",
 ]
