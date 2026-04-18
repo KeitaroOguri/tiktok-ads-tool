@@ -116,6 +116,19 @@ UNIFIED_COLUMNS: list[dict] = [
         ],
     },
     {
+        "name": "課金方式",
+        "section": "adgroup",
+        "width": 140,
+        "options": ["CPM", "CPC", "CPV", "OCPM"],
+        "note": (
+            "課金方式（必須）\n"
+            "CPM: インプレッション課金\n"
+            "CPC: クリック課金\n"
+            "CPV: 動画再生課金\n"
+            "OCPM: 最適化インプレッション課金"
+        ),
+    },
+    {
         "name": "入札タイプ",
         "section": "adgroup",
         "width": 120,

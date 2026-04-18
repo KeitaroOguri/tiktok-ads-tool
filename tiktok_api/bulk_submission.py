@@ -55,6 +55,13 @@ OPTIMIZATION_GOAL_MAP = {
     "インプレッション": "SHOW",
 }
 
+BILLING_EVENT_MAP = {
+    "CPM":  "CPM",
+    "CPC":  "CPC",
+    "CPV":  "CPV",
+    "OCPM": "OCPM",
+}
+
 BID_TYPE_MAP = {
     "自動入札": "BID_TYPE_NO_BID",
     "カスタム": "BID_TYPE_CUSTOM",
@@ -166,9 +173,10 @@ def _build_adgroup_payload(row: pd.Series, campaign_id: str) -> dict:
     placement    = _map(PLACEMENT_TYPE_MAP, _s(row, "配置タイプ"),              "PLACEMENT_TYPE_AUTOMATIC")
     budget_mode  = _map(BUDGET_MODE_MAP,    _s(row, "広告グループ予算タイプ"),   "BUDGET_MODE_INFINITE")
     schedule     = _map(SCHEDULE_TYPE_MAP,  _s(row, "スケジュール"),             "SCHEDULE_FROM_NOW")
-    opt_goal     = _map(OPTIMIZATION_GOAL_MAP, _s(row, "最適化目標"))
-    bid_type     = _map(BID_TYPE_MAP,       _s(row, "入札タイプ"),               "BID_TYPE_NO_BID")
-    gender       = _map(GENDER_MAP,         _s(row, "性別"),                     "GENDER_UNLIMITED")
+    opt_goal      = _map(OPTIMIZATION_GOAL_MAP, _s(row, "最適化目標"))
+    billing_event = _s(row, "課金方式") or "CPM"
+    bid_type      = _map(BID_TYPE_MAP,       _s(row, "入札タイプ"),               "BID_TYPE_NO_BID")
+    gender        = _map(GENDER_MAP,         _s(row, "性別"),                     "GENDER_UNLIMITED")
 
     # schedule_start_time は必須。未入力なら現在時刻（UTC）をセット
     start = _s(row, "開始日時")
@@ -182,6 +190,7 @@ def _build_adgroup_payload(row: pd.Series, campaign_id: str) -> dict:
         "budget_mode": budget_mode,
         "schedule_type": schedule,
         "schedule_start_time": start,   # ✅ 正しいフィールド名
+        "billing_event": billing_event,
         "bid_type": bid_type,
     }
 
