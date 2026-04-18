@@ -6,6 +6,10 @@ from .adgroup import AdGroupManager
 from .ad import AdManager
 from .creative import CreativeManager
 from .duplicate import DuplicateManager
+from .sheets import GoogleSheetsManager
+from .bulk_submission import BulkSubmissionProcessor
+from .slack_notifier import SlackNotifier
+from .api_monitor import APIFieldMonitor
 
 __all__ = [
     "TikTokAuth",
@@ -16,4 +20,8 @@ __all__ = [
     "AdManager",
     "CreativeManager",
     "DuplicateManager",
+    "GoogleSheetsManager",
+    "BulkSubmissionProcessor",
+    "SlackNotifier",
+    "APIFieldMonitor",
 ]
