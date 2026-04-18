@@ -1,5 +1,8 @@
 """
-Google Sheets連携 - 統合シート（キャンペーン/広告グループ/広告 を1シートで管理）
+Google Sheets連携 - 統合シート（TikTokエクスポート形式準拠）
+
+列名はTikTok広告管理画面のエクスポートExcelと同じ日本語名を使用。
+→ エクスポートしたExcelをそのままコピーして貼り付けることができる。
 """
 
 from __future__ import annotations
@@ -27,247 +30,316 @@ SECTION_COLORS = {
 
 SECTION_LABELS = {
     "campaign": "📁 キャンペーン",
-    "adgroup":  "📂 広告グループ",
+    "adgroup":  "📂 広告グループ（広告セット）",
     "ad":       "📄 広告",
     "result":   "📊 結果（自動入力）",
 }
 
 # -------------------------------------------------------
-# 統合シートの列定義
+# 統合シートの列定義（TikTokエクスポート形式準拠）
 # options があれば → プルダウン、なければ → テキスト入力
 # -------------------------------------------------------
 UNIFIED_COLUMNS: list[dict] = [
-    # ── キャンペーン ──────────────────────────────
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 【キャンペーン】
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     {
         "name": "キャンペーン名",
         "section": "campaign",
-        "width": 180,
+        "width": 220,
     },
     {
-        "name": "目標タイプ",
+        "name": "目的",
         "section": "campaign",
         "width": 160,
         "options": [
-            "トラフィック", "リーチ", "動画視聴", "コンバージョン",
-            "アプリインストール", "リード獲得", "フォロー",
+            "Sales", "Traffic", "Reach", "Video Views",
+            "App Installs", "Lead Generation", "Followers",
         ],
+        "note": "TikTok広告管理の目的\nSales=コンバージョン / Traffic=トラフィック\nVideo Views=動画視聴 / App Installs=アプリインストール",
     },
     {
         "name": "キャンペーン予算タイプ",
         "section": "campaign",
         "width": 160,
-        "options": ["無制限", "日予算", "総予算", "動的日予算"],
+        "options": ["Daily", "Lifetime", "No Limit"],
+        "note": "Daily=日予算 / Lifetime=総予算 / No Limit=無制限",
     },
     {
         "name": "キャンペーン予算",
         "section": "campaign",
         "width": 130,
-        "note": "予算タイプが「無制限」の場合は空欄でOK",
+        "note": "予算タイプが「No Limit」の場合は空欄でOK（単位: 円）",
     },
 
-    # ── 広告グループ ──────────────────────────────
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 【広告グループ（広告セット）】
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     {
-        "name": "広告グループ名",
+        "name": "広告セット名",
+        "section": "adgroup",
+        "width": 220,
+    },
+    {
+        "name": "プレースメントタイプ",
+        "section": "adgroup",
+        "width": 160,
+        "options": ["Automatic", "Select"],
+        "note": "Automatic=自動配置 / Select=手動配置",
+    },
+    {
+        "name": "プレースメント",
+        "section": "adgroup",
+        "width": 160,
+        "note": "プレースメントタイプがSelectのときのみ入力\n例: TikTok, Pangle",
+    },
+    {
+        "name": "TikTok ピクセル ID",
         "section": "adgroup",
         "width": 180,
+        "note": "コンバージョン追跡用ピクセルID\n例: CVCI6QJC77UDL07BVQP0",
     },
     {
-        "name": "配置タイプ",
-        "section": "adgroup",
-        "width": 120,
-        "options": ["自動", "手動"],
-    },
-    {
-        "name": "広告グループ予算タイプ",
-        "section": "adgroup",
-        "width": 160,
-        "options": ["無制限", "日予算", "総予算", "動的日予算"],
-    },
-    {
-        "name": "広告グループ予算",
+        "name": "ピクセルイベント",
         "section": "adgroup",
         "width": 130,
+        "note": "ピクセルのイベントコード（数値）\n例: 96 (CompletePayment)",
     },
     {
-        "name": "スケジュール",
+        "name": "ユーザーリスト設定ID",
         "section": "adgroup",
-        "width": 130,
-        "options": ["開始日から", "期間指定"],
+        "width": 180,
+        "note": "カスタムオーディエンスID（カンマ区切りで複数可）",
     },
     {
-        "name": "開始日時",
+        "name": "ユーザーリスト除外ID",
         "section": "adgroup",
-        "width": 160,
-        "note": "形式: 2024-07-01 00:00:00 (UTC)\n空欄の場合は入稿時刻が自動セットされます",
+        "width": 180,
+        "note": "除外オーディエンスID（カンマ区切りで複数可）",
     },
     {
-        "name": "終了日時",
+        "name": "ロケーション",
         "section": "adgroup",
-        "width": 160,
-        "note": "形式: 2024-07-31 23:59:59 (UTC)\nスケジュールが「期間指定」の場合のみ入力",
-    },
-    {
-        "name": "最適化目標",
-        "section": "adgroup",
-        "width": 140,
-        "options": [
-            "クリック", "リーチ", "コンバージョン",
-            "動画再生", "フォロー", "インプレッション",
-        ],
-    },
-    {
-        "name": "課金方式",
-        "section": "adgroup",
-        "width": 140,
-        "options": ["CPM", "CPC", "CPV", "OCPM"],
+        "width": 200,
         "note": (
-            "課金方式（必須）\n"
-            "CPM: インプレッション課金\n"
-            "CPC: クリック課金\n"
-            "CPV: 動画再生課金\n"
-            "OCPM: 最適化インプレッション課金"
+            "地域IDをカンマ区切りで入力（Lプレフィックスは不要）\n"
+            "例: 1865694,1864226,...\n"
+            "空欄 = 日本（7709）が自動セットされます"
         ),
-    },
-    {
-        "name": "入札タイプ",
-        "section": "adgroup",
-        "width": 120,
-        "options": ["自動入札", "カスタム"],
-    },
-    {
-        "name": "入札価格",
-        "section": "adgroup",
-        "width": 100,
-        "note": "入札タイプが「カスタム」の場合のみ入力",
     },
     {
         "name": "性別",
         "section": "adgroup",
         "width": 100,
-        "options": ["すべて", "男性", "女性"],
+        "options": ["All", "Male", "Female"],
+        "note": "All=すべて / Male=男性 / Female=女性",
     },
     {
-        "name": "ターゲット地域",
+        "name": "年齢",
+        "section": "adgroup",
+        "width": 180,
+        "note": (
+            "年齢層をカンマ区切りで入力\n"
+            "例: 18-24,25-34,35-44\n"
+            "All または空欄 = すべての年齢"
+        ),
+    },
+    {
+        "name": "言語",
+        "section": "adgroup",
+        "width": 100,
+        "note": "言語コード（例: ja=日本語, en=英語）\n空欄 = すべての言語",
+    },
+    {
+        "name": "広告セット予算タイプ",
         "section": "adgroup",
         "width": 160,
-        "note": (
-            "地域IDをカンマ区切りで入力\n"
-            "空欄 = 日本（7709）が自動セットされます\n"
-            "日本以外の例: 7709=日本, 7707=米国, 7706=英国"
-        ),
+        "options": ["Daily", "Lifetime", "No Limit", ""],
+        "note": "Daily=日予算 / Lifetime=総予算 / No Limit or 空欄=無制限",
     },
     {
-        "name": "年齢層",
+        "name": "広告セット予算",
         "section": "adgroup",
-        "width": 200,
-        "note": (
-            "対象年齢をカンマ区切りで入力\n"
-            "選択肢: AGE_13_17, AGE_18_24, AGE_25_34,\n"
-            "AGE_35_44, AGE_45_54, AGE_55_100\n"
-            "例: AGE_18_24,AGE_25_34\n"
-            "空欄 = すべての年齢"
-        ),
+        "width": 130,
+        "note": "広告グループレベルの予算（単位: 円）\n空欄 = キャンペーン予算に従う",
+    },
+    {
+        "name": "開始時刻",
+        "section": "adgroup",
+        "width": 180,
+        "note": "形式: 2024/4/1 0:00 または 2024-04-01 00:00:00\n空欄 = 入稿時刻が自動セット",
+    },
+    {
+        "name": "終了時刻",
+        "section": "adgroup",
+        "width": 180,
+        "note": "形式: 2024/7/31 23:59 または No Limit（空欄）\nNo Limit または空欄 = 終了なし",
+    },
+    {
+        "name": "最適化の目標",
+        "section": "adgroup",
+        "width": 160,
+        "options": ["Conversion", "Click", "Reach", "Video Play", "Follow", "Impression"],
+        "note": "Conversion=コンバージョン / Click=クリック\nVideo Play=動画再生 / Follow=フォロー",
+    },
+    {
+        "name": "課金イベント",
+        "section": "adgroup",
+        "width": 120,
+        "options": ["oCPM", "CPM", "CPC", "CPV"],
+        "note": "oCPM=最適化インプレッション / CPM=インプレッション\nCPC=クリック / CPV=動画再生",
+    },
+    {
+        "name": "入札タイプ",
+        "section": "adgroup",
+        "width": 140,
+        "options": ["Lowest Cost", "Cost Cap", "Bid Cap"],
+        "note": "Lowest Cost=自動入札（入札額不要）\nCost Cap / Bid Cap=手動入札（入札額必須）",
+    },
+    {
+        "name": "入札",
+        "section": "adgroup",
+        "width": 100,
+        "note": "入札タイプが Cost Cap / Bid Cap のときのみ入力（単位: 円）",
+    },
+    {
+        "name": "フリークエンシー上限",
+        "section": "adgroup",
+        "width": 140,
+        "note": "1ユーザーへの最大表示回数\n例: 2 （2回/7日など）",
     },
 
-    # ── 広告 ──────────────────────────────────────
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 【広告】
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     {
         "name": "広告名",
         "section": "ad",
-        "width": 180,
+        "width": 200,
     },
     {
         "name": "広告フォーマット",
         "section": "ad",
         "width": 140,
-        "options": ["SINGLE_VIDEO", "IMAGE", "SPARK_ADS"],
+        "options": ["Single video", "Image", "Spark Ads"],
+        "note": "Single video=単一動画 / Image=画像広告 / Spark Ads=スパーク広告",
     },
     {
-        "name": "動画素材ID",
+        "name": "動画名",
         "section": "ad",
-        "width": 160,
+        "width": 200,
         "note": (
-            "TikTok広告管理画面の「クリエイティブ」にあるvideo_id\n"
-            "※ Google Drive動画URLを使う場合は空欄でOK"
+            "TikTokクリエイティブライブラリの動画名（参照用）\n"
+            "★ 動画を新規アップロードする場合は「Google Drive動画URL」を使用してください"
         ),
     },
     {
         "name": "Google Drive動画URL",
         "section": "ad",
-        "width": 240,
+        "width": 260,
         "note": (
-            "Google DriveのファイルURL（動画素材IDが空の場合に自動アップロード）\n"
+            "Google DriveのファイルURL（「動画名」で既存動画を指定しない場合に自動アップロード）\n"
             "例: https://drive.google.com/file/d/xxxxx/view\n"
             "⚠️ サービスアカウントとファイルを共有してください:\n"
             "tiktok-ads-tool@winged-vigil-371710.iam.gserviceaccount.com"
         ),
     },
     {
-        "name": "サムネイル素材ID",
+        "name": "テキスト",
         "section": "ad",
-        "width": 160,
-        "note": "カバー画像のimage_id（省略可）",
+        "width": 260,
+        "note": "広告のキャプションテキスト（絵文字OK）",
     },
     {
-        "name": "広告テキスト",
-        "section": "ad",
-        "width": 220,
-    },
-    {
-        "name": "CTA",
+        "name": "CTAタイプ",
         "section": "ad",
         "width": 160,
         "options": [
-            "詳しくはこちら", "今すぐ購入", "アプリをダウンロード",
-            "今すぐ申し込む", "今すぐ予約", "お問い合わせ",
-            "今すぐ登録", "今すぐ視聴", "今すぐプレイ",
-            "詳細を見る", "今すぐ注文", "今すぐ入手",
+            "Learn More", "Shop Now", "Download",
+            "Apply Now", "Book Now", "Contact Us",
+            "Sign Up", "Watch Now", "Play Game",
+            "View More", "Order Now", "Get Now",
+            "Dynamic",
         ],
+        "note": (
+            "CTA（コール・トゥ・アクション）\n"
+            "Dynamic = TikTokが自動で最適なCTAを選択\n"
+            "Learn More = 詳しくはこちら"
+        ),
     },
     {
-        "name": "ランディングURL",
+        "name": "Web URL",
         "section": "ad",
-        "width": 220,
+        "width": 280,
+        "note": "ランディングページURL\n例: https://example.com/?ttclid=__CLICKID__",
     },
     {
-        "name": "表示名",
+        "name": "アイデンティティタイプ",
         "section": "ad",
-        "width": 140,
-        "note": "ブランド名や広告主名",
+        "width": 180,
+        "options": ["TTBC Authorized Post", "CUSTOM_USER", "AUTH_CODE"],
+        "note": (
+            "TikTokアカウントのアイデンティティタイプ\n"
+            "TTBC Authorized Post = BC認証済みアカウント"
+        ),
+    },
+    {
+        "name": "アイデンティティID",
+        "section": "ad",
+        "width": 240,
+        "note": "アイデンティティのID（「id:」プレフィックスは不要）\n例: f3fcd787-c94d-5b86-a8d4-49740e624dcd",
+    },
+    {
+        "name": "インプレッショントラッキング URL",
+        "section": "ad",
+        "width": 260,
+        "note": "インプレッション計測用サードパーティトラッキングURL（省略可）",
+    },
+    {
+        "name": "クリックトラッキングURL",
+        "section": "ad",
+        "width": 260,
+        "note": "クリック計測用サードパーティトラッキングURL（省略可）",
     },
 
-    # ── 結果（自動入力） ──────────────────────────
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 【結果（自動入力）】
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     {
         "name": "ステータス",
         "section": "result",
         "width": 110,
+        "note": "入稿後に自動入力: success / skipped / error",
     },
     {
         "name": "キャンペーンID",
         "section": "result",
-        "width": 160,
+        "width": 180,
+        "note": "入稿後に自動入力。既存IDを書いておくと再作成をスキップします",
     },
     {
-        "name": "広告グループID",
+        "name": "広告セット ID",
         "section": "result",
-        "width": 160,
+        "width": 180,
+        "note": "入稿後に自動入力。既存IDを書いておくと再作成をスキップします",
     },
     {
         "name": "広告ID",
         "section": "result",
-        "width": 160,
+        "width": 180,
+        "note": "入稿後に自動入力。既存IDを書いておくと再入稿をスキップします",
     },
     {
         "name": "エラー内容",
         "section": "result",
-        "width": 240,
+        "width": 300,
+        "note": "エラーが発生した場合のメッセージ",
     },
 ]
 
 # 列名一覧（シート読み込み時の参照用）
 COLUMN_NAMES = [c["name"] for c in UNIFIED_COLUMNS]
-
-# 結果列インデックス（0始まり）
-_result_col_names = ["ステータス", "キャンペーンID", "広告グループID", "広告ID", "エラー内容"]
 
 
 class GoogleSheetsManager:
@@ -329,7 +401,6 @@ class GoogleSheetsManager:
         # シートが既にあれば削除して再作成
         try:
             existing = ss.worksheet(SHEET_NAME)
-            # 全データをクリアして再利用
             existing.clear()
             ws = existing
             logger.info(f"既存シートをクリア: {SHEET_NAME}")
@@ -376,7 +447,7 @@ class GoogleSheetsManager:
             })
 
             # データ行の背景色（薄め）
-            data_color = {k: 0.95 + v * 0.05 for k, v in color.items()}  # 薄い版
+            data_color = {k: min(1.0, 0.95 + v * 0.05) for k, v in color.items()}
             requests.append({
                 "repeatCell": {
                     "range": {
@@ -396,7 +467,8 @@ class GoogleSheetsManager:
             })
 
             # プルダウン設定
-            if col_def.get("options"):
+            opts = [o for o in col_def.get("options", []) if o != ""]
+            if opts:
                 requests.append({
                     "setDataValidation": {
                         "range": {
@@ -411,7 +483,7 @@ class GoogleSheetsManager:
                                 "type": "ONE_OF_LIST",
                                 "values": [
                                     {"userEnteredValue": v}
-                                    for v in col_def["options"]
+                                    for v in opts
                                 ],
                             },
                             "showCustomUi": True,
@@ -434,7 +506,7 @@ class GoogleSheetsManager:
                 }
             })
 
-        # ヘッダー行を固定（スクロールしても見える）
+        # ヘッダー行を固定
         requests.append({
             "updateSheetProperties": {
                 "properties": {
@@ -445,10 +517,9 @@ class GoogleSheetsManager:
             }
         })
 
-        # ── 一括実行 ──
         ss.batch_update({"requests": requests})
 
-        # ── 3. セルメモを追加（note があるもの） ──
+        # ── 3. セルメモを追加 ──
         notes = {}
         for col_idx, col_def in enumerate(UNIFIED_COLUMNS):
             if col_def.get("note"):
@@ -494,6 +565,7 @@ class GoogleSheetsManager:
             "campaign_id": str,
             "adgroup_id": str,
             "ad_id": str,
+            "video_id": str,   # Drive経由アップロード時: "動画名"列に書き戻す
             "error": str,
           }
         ]
@@ -514,10 +586,10 @@ class GoogleSheetsManager:
 
         col_status   = col_of("ステータス")
         col_camp_id  = col_of("キャンペーンID")
-        col_ag_id    = col_of("広告グループID")
+        col_ag_id    = col_of("広告セット ID")
         col_ad_id    = col_of("広告ID")
         col_err      = col_of("エラー内容")
-        col_video_id = col_of("動画素材ID")   # Drive経由アップロード時に書き戻す
+        col_video    = col_of("動画名")   # Drive経由アップロード時にvideo_idを書き戻す
 
         cells: list[gspread.Cell] = []
         for r in results:
@@ -532,10 +604,9 @@ class GoogleSheetsManager:
                 cells.append(gspread.Cell(sheet_row, col_ad_id, r.get("ad_id", "")))
             if col_err:
                 cells.append(gspread.Cell(sheet_row, col_err, r.get("error", "")))
-            # Drive経由でアップロードしたvideo_idを「動画素材ID」列に書き戻す
-            # → 次回以降はこのvideo_idを使うので再アップロード不要になる
-            if col_video_id and r.get("video_id"):
-                cells.append(gspread.Cell(sheet_row, col_video_id, r.get("video_id", "")))
+            # Drive経由でアップロードしたvideo_idを「動画名」列に書き戻す
+            if col_video and r.get("video_id"):
+                cells.append(gspread.Cell(sheet_row, col_video, r.get("video_id", "")))
 
         if cells:
             ws.update_cells(cells, value_input_option="RAW")

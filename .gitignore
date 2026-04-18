@@ -1,6 +1,8 @@
 .env
 config/accounts.yaml
+config/api_field_snapshot.json
 logs/
 __pycache__/
 *.pyc
 .DS_Store
+.streamlit/secrets.toml

@@ -206,8 +206,8 @@ elif page == "📤 一括入稿":
 
     import traceback
 
-    tab_submit, tab_monitor, tab_guide = st.tabs(
-        ["📊 スプレッドシートから入稿", "🔍 APIフィールド変更監視", "📖 使い方"]
+    tab_submit, tab_import, tab_monitor, tab_guide = st.tabs(
+        ["📊 スプレッドシートから入稿", "📥 Excelインポート", "🔍 APIフィールド変更監視", "📖 使い方"]
     )
 
     # ===== 使い方 =====
@@ -220,13 +220,24 @@ elif page == "📤 一括入稿":
 
 **② スプレッドシートURLを貼り付けて「テンプレートシートを作成」を実行**
 - `入稿データ` という1枚のシートが自動生成されます
-- 📁キャンペーン（水色）・📂広告グループ（緑）・📄広告（黄）・📊結果（グレー）でセクション色分けされます
+- 📁キャンペーン（水色）・📂広告グループ/広告セット（緑）・📄広告（黄）・📊結果（グレー）でセクション色分けされます
+- **列名はTikTok広告管理画面のエクスポートExcelと同じ**ため、エクスポートデータをそのままコピー貼り付け可能です
 - プルダウン付き列は自動的にドロップダウン選択できます
 
-**③ シートにデータを入力して「データをプレビュー」→「一括入稿を実行」**
-- **1行 = 広告1件**
-- 同じキャンペーン名を複数行に書いても、キャンペーンは1回だけ作成されます（広告グループも同様）
-- 「キャンペーンID」「広告グループID」「広告ID」に既存のIDを書いておくとスキップされます
+**③ データ入力方法（3通り）**
+
+📥 **A. Excelインポート（推奨）**
+- 「Excelインポート」タブからTikTokエクスポートExcelをアップロード → 自動変換・書き込み
+
+📋 **B. 手動入力**
+- 1行 = 広告1件でシートに直接入力
+- 同じ「キャンペーン名」を複数行に書いてもキャンペーンは1回だけ作成されます（広告セット名も同様）
+
+🔄 **C. 再入稿（既存データ更新）**
+- 「キャンペーンID」「広告セット ID」「広告ID」に既存IDが入っている行はスキップされます
+- 新しい広告のみ「広告ID」を空欄にしてください
+
+**④ 「データをプレビュー」→「一括入稿を実行」**
 """)
 
         st.markdown("---")
@@ -441,6 +452,105 @@ elif page == "📤 一括入稿":
                         except Exception as e:
                             st.error(f"入稿エラー: {e}")
                             st.code(traceback.format_exc())
+
+    # ===== Excelインポート =====
+    with tab_import:
+        st.subheader("TikTok広告エクスポートExcelをシートにインポート")
+        st.info(
+            "TikTok広告管理画面からエクスポートしたExcelファイル（「広告」シート）を\n"
+            "統合シート形式に変換してスプレッドシートに書き込みます。"
+        )
+
+        col_imp1, col_imp2 = st.columns([2, 1])
+        with col_imp1:
+            ss_url_imp = st.text_input(
+                "インポート先スプレッドシートURL",
+                placeholder="https://docs.google.com/spreadsheets/d/xxxxx/edit",
+                key="import_ss_url",
+            )
+        with col_imp2:
+            append_mode = st.checkbox(
+                "既存データに追記する",
+                value=False,
+                help="OFFの場合は既存データを全削除して上書きします",
+            )
+
+        uploaded_file = st.file_uploader(
+            "Excelファイルをアップロード（.xlsx）",
+            type=["xlsx"],
+            key="excel_uploader",
+        )
+
+        if uploaded_file is not None:
+            import tempfile, os, pandas as pd
+
+            # 一時ファイルに保存
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+                tmp.write(uploaded_file.read())
+                tmp_path = tmp.name
+
+            try:
+                from tiktok_api.excel_importer import convert_excel_to_unified
+
+                with st.spinner("変換中..."):
+                    df_imp = convert_excel_to_unified(tmp_path)
+
+                st.success(f"✅ {len(df_imp)}行に変換しました")
+
+                # プレビュー
+                from tiktok_api.sheets import UNIFIED_COLUMNS as _IMP_COLS
+                sec_tabs_imp = st.tabs(["📁 キャンペーン", "📂 広告グループ", "📄 広告", "📊 結果(既存ID)"])
+                section_map = {"campaign": 0, "adgroup": 1, "ad": 2, "result": 3}
+                section_col_lists = [[], [], [], []]
+                for c in _IMP_COLS:
+                    section_col_lists[section_map[c["section"]]].append(c["name"])
+
+                for tab_ui_imp, cols_imp in zip(sec_tabs_imp, section_col_lists):
+                    with tab_ui_imp:
+                        show = [c for c in cols_imp if c in df_imp.columns]
+                        if show:
+                            st.dataframe(df_imp[show], use_container_width=True, hide_index=True)
+
+                st.markdown("---")
+                st.warning(
+                    "⚠️ **動画素材IDについて**: エクスポートExcelには動画IDは含まれていません。\n"
+                    "「動画素材ID」列は空欄になっています。\n"
+                    "インポート後にスプレッドシートで動画素材IDを入力するか、"
+                    "「Google Drive動画URL」列にDriveのURLを入力してください。"
+                )
+                st.info(
+                    "📌 「キャンペーンID」「広告グループID」「広告ID」は既存IDが自動入力されます。\n"
+                    "→ **一括入稿を実行するとステータスが「skipped」になり、再入稿はスキップされます。**\n"
+                    "→ 新規入稿したい場合はこれらのID列を空欄にしてください。"
+                )
+
+                if st.button(
+                    "📤 スプレッドシートに書き込む",
+                    type="primary",
+                    disabled=not ss_url_imp,
+                ):
+                    with st.spinner("書き込み中..."):
+                        try:
+                            from tiktok_api.excel_importer import write_to_sheet
+                            creds = dict(st.secrets["gcp_service_account"])
+                            write_to_sheet(df_imp, ss_url_imp, creds, append=append_mode)
+                            st.success(
+                                f"✅ {len(df_imp)}行をスプレッドシートに書き込みました！\n\n"
+                                "スプレッドシートを開いて内容を確認し、"
+                                "「スプレッドシートから入稿」タブから入稿を実行してください。"
+                            )
+                        except Exception as e:
+                            st.error(f"書き込みエラー: {e}")
+                            st.code(traceback.format_exc())
+
+            except Exception as e:
+                st.error(f"変換エラー: {e}")
+                st.code(traceback.format_exc())
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
 
     # ===== APIフィールド変更監視 =====
     with tab_monitor:

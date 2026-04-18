@@ -11,6 +11,7 @@ from .bulk_submission import BulkSubmissionProcessor
 from .slack_notifier import SlackNotifier
 from .api_monitor import APIFieldMonitor
 from .drive_uploader import DriveUploader
+from .excel_importer import convert_excel_to_unified, write_to_sheet
 
 __all__ = [
     "TikTokAuth",
@@ -26,4 +27,6 @@ __all__ = [
     "SlackNotifier",
     "APIFieldMonitor",
     "DriveUploader",
+    "convert_excel_to_unified",
+    "write_to_sheet",
 ]
