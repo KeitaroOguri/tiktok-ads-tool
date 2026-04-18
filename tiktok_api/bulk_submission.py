@@ -30,9 +30,10 @@ OBJECTIVE_MAP = {
 }
 
 BUDGET_MODE_MAP = {
-    "無制限": "BUDGET_MODE_INFINITE",
-    "日予算": "BUDGET_MODE_DAILY",
-    "総予算": "BUDGET_MODE_TOTAL",
+    "無制限":   "BUDGET_MODE_INFINITE",
+    "日予算":   "BUDGET_MODE_DAY",
+    "総予算":   "BUDGET_MODE_TOTAL",
+    "動的日予算": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
 }
 
 PLACEMENT_TYPE_MAP = {

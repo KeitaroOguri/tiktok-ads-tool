@@ -56,7 +56,7 @@ UNIFIED_COLUMNS: list[dict] = [
         "name": "キャンペーン予算タイプ",
         "section": "campaign",
         "width": 160,
-        "options": ["無制限", "日予算", "総予算"],
+        "options": ["無制限", "日予算", "総予算", "動的日予算"],
     },
     {
         "name": "キャンペーン予算",
@@ -81,7 +81,7 @@ UNIFIED_COLUMNS: list[dict] = [
         "name": "広告グループ予算タイプ",
         "section": "adgroup",
         "width": 160,
-        "options": ["無制限", "日予算", "総予算"],
+        "options": ["無制限", "日予算", "総予算", "動的日予算"],
     },
     {
         "name": "広告グループ予算",
