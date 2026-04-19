@@ -143,6 +143,37 @@ elif page == "🔑 BC・アカウント管理":
                 else:
                     st.info("「APIから取得」ボタンで広告アカウントを取得してください")
 
+                st.markdown("---")
+                st.subheader("手動でアカウントを追加")
+                st.caption("APIで取得できないアカウント（他BCから共有されたアカウントなど）を手動で登録できます。")
+                with st.form("manual_add_account_form"):
+                    col_id, col_name, col_cur = st.columns([3, 3, 1])
+                    with col_id:
+                        manual_adv_id = st.text_input("広告アカウントID", placeholder="例: 7412345678901234567")
+                    with col_name:
+                        manual_adv_name = st.text_input("アカウント名（管理用）", placeholder="例: クライアントA")
+                    with col_cur:
+                        manual_currency = st.selectbox("通貨", ["JPY", "USD"])
+                    manual_submitted = st.form_submit_button("追加", type="primary")
+                    if manual_submitted:
+                        if not manual_adv_id or not manual_adv_name:
+                            st.error("アカウントIDとアカウント名を入力してください")
+                        else:
+                            try:
+                                added = bm.add_ad_account_manually(
+                                    bc_name=selected_bc,
+                                    advertiser_id=manual_adv_id.strip(),
+                                    account_name=manual_adv_name.strip(),
+                                    currency=manual_currency,
+                                )
+                                if added:
+                                    st.success(f"✅ {manual_adv_name} を追加しました")
+                                    st.rerun()
+                                else:
+                                    st.warning("このアカウントIDは既に登録されています")
+                            except Exception as e:
+                                st.error(f"追加失敗: {e}")
+
         except Exception as e:
             st.error(f"エラー: {e}")
 
@@ -309,21 +340,131 @@ elif page == "📤 一括入稿":
                 help="入稿完了時にSlack通知を送ります",
             )
 
+        # ── ピクセル・アイデンティティ設定（アカウントごとに保存） ──
+        import json
+        from pathlib import Path as _Path
+
+        _advertiser_id = selected_account["advertiser_id"]
+        _settings_path = _Path("config/pixel_identity_settings.json")
+        _settings_path.parent.mkdir(parents=True, exist_ok=True)
+
+        def _load_all_settings() -> dict:
+            if _settings_path.exists():
+                try:
+                    return json.loads(_settings_path.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            return {}
+
+        def _load_pi_settings(advertiser_id: str) -> dict:
+            all_data = _load_all_settings()
+            return all_data.get(advertiser_id, {"pixels": [], "identities": []})
+
+        def _save_pi_settings(advertiser_id: str, data: dict):
+            all_data = _load_all_settings()
+            all_data[advertiser_id] = data
+            _settings_path.write_text(json.dumps(all_data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        pi_settings = _load_pi_settings(_advertiser_id)
+
+        with st.expander("📡 ピクセル・TikTokアカウント設定（プルダウンに表示する項目を登録）"):
+            st.caption(
+                f"🔑 現在の設定対象アカウント: **{selected_account_key}**（advertiser_id: `{_advertiser_id}`）\n\n"
+                "TikTokの広告管理画面から確認できるピクセルIDとTikTokアカウント情報を登録してください。\n"
+                "アカウントごとに個別保存されます。"
+            )
+
+            col_px, col_id = st.columns(2)
+
+            with col_px:
+                st.markdown("**📡 ピクセル**")
+                st.caption("形式: `名前,pixel_id`（1行1件）\n例: `メインピクセル,CVCI6QJC77UDL07BVQP0`")
+                px_text = "\n".join(
+                    f"{p['name']},{p['pixel_id']}" for p in pi_settings.get("pixels", [])
+                )
+                new_px_text = st.text_area(
+                    "ピクセル一覧",
+                    value=px_text,
+                    height=140,
+                    key=f"px_input_{_advertiser_id}",
+                    label_visibility="collapsed",
+                )
+
+            with col_id:
+                st.markdown("**👤 TikTokアカウント（アイデンティティ）**")
+                st.caption(
+                    "形式: `表示名,identity_id,identity_type`（1行1件）\n"
+                    "例: `澤村アカウント,f3fcd787-c94d-5b86-a8d4-49740e624dcd,BC_AUTH_TT`"
+                )
+                id_text = "\n".join(
+                    f"{i['name']},{i['identity_id']},{i['identity_type']}"
+                    for i in pi_settings.get("identities", [])
+                )
+                new_id_text = st.text_area(
+                    "アイデンティティ一覧",
+                    value=id_text,
+                    height=140,
+                    key=f"id_input_{_advertiser_id}",
+                    label_visibility="collapsed",
+                )
+
+            if st.button("💾 設定を保存", key=f"save_pi_{_advertiser_id}"):
+                new_pixels = []
+                for line in new_px_text.strip().splitlines():
+                    parts = [p.strip() for p in line.split(",")]
+                    if len(parts) >= 2 and parts[1]:
+                        new_pixels.append({"name": parts[0], "pixel_id": parts[1]})
+
+                new_identities = []
+                for line in new_id_text.strip().splitlines():
+                    parts = [p.strip() for p in line.split(",")]
+                    if len(parts) >= 2 and parts[1]:
+                        new_identities.append({
+                            "name": parts[0],
+                            "identity_id": parts[1],
+                            "identity_type": parts[2] if len(parts) >= 3 else "BC_AUTH_TT",
+                        })
+
+                _save_pi_settings(_advertiser_id, {"pixels": new_pixels, "identities": new_identities})
+                st.success(
+                    f"✅ [{selected_account_key}] に保存しました\n"
+                    f"ピクセル {len(new_pixels)}件 / アカウント {len(new_identities)}件"
+                )
+                pi_settings = {"pixels": new_pixels, "identities": new_identities}
+
+        # 設定からプルダウン選択肢を生成
+        _pixel_opts = [
+            f"{p['name']} [{p['pixel_id']}]"
+            for p in pi_settings.get("pixels", [])
+            if p.get("pixel_id")
+        ]
+        _identity_opts = [
+            f"{i['name']} [{i['identity_id']}|{i['identity_type']}]"
+            for i in pi_settings.get("identities", [])
+            if i.get("identity_id")
+        ]
+
         col_init, col_preview = st.columns(2)
 
         # テンプレート初期化
         with col_init:
             if st.button("📋 テンプレートシートを作成", disabled=not ss_url):
-                with st.spinner("シート作成中... 少々お待ちください"):
+                with st.spinner("シート作成中..."):
                     try:
                         from tiktok_api.sheets import GoogleSheetsManager
                         creds = dict(st.secrets["gcp_service_account"])
                         gsm = GoogleSheetsManager(ss_url, creds)
-                        gsm.initialize_template()
-                        st.success(
-                            "✅ テンプレートシート「入稿データ」を作成しました！\n\n"
-                            "スプレッドシートを開いてデータを入力してください。"
+                        gsm.initialize_template(
+                            pixel_options=_pixel_opts or None,
+                            identity_id_options=_identity_opts or None,
                         )
+                        msg = "✅ テンプレートシート「入稿データ」を作成しました！\n\n"
+                        if _pixel_opts:
+                            msg += f"📡 ピクセル {len(_pixel_opts)}件 をプルダウンに追加\n"
+                        if _identity_opts:
+                            msg += f"👤 TikTokアカウント {len(_identity_opts)}件 をプルダウンに追加\n"
+                        msg += "\nスプレッドシートを開いてデータを入力してください。"
+                        st.success(msg)
                     except Exception as e:
                         st.error(f"シート作成エラー: {e}")
                         st.code(traceback.format_exc())

@@ -1,8 +1,5 @@
 """
-Google Sheets連携 - 統合シート（TikTokエクスポート形式準拠）
-
-列名はTikTok広告管理画面のエクスポートExcelと同じ日本語名を使用。
-→ エクスポートしたExcelをそのままコピーして貼り付けることができる。
+Google Sheets連携 - 統合シート（TikTokエクスポート形式準拠・日本語プルダウン対応）
 """
 
 from __future__ import annotations
@@ -18,9 +15,6 @@ SCOPES = [
 
 SHEET_NAME = "入稿データ"
 
-# -------------------------------------------------------
-# セクション別ヘッダー色
-# -------------------------------------------------------
 SECTION_COLORS = {
     "campaign": {"red": 0.67, "green": 0.84, "blue": 0.90},  # 水色
     "adgroup":  {"red": 0.72, "green": 0.88, "blue": 0.70},  # 緑
@@ -35,76 +29,86 @@ SECTION_LABELS = {
     "result":   "📊 結果（自動入力）",
 }
 
+# 必須項目のヘッダー文字色（赤）
+REQUIRED_TEXT_COLOR = {"red": 0.80, "green": 0.00, "blue": 0.00}
+NORMAL_TEXT_COLOR   = {"red": 0.10, "green": 0.10, "blue": 0.10}
+
 # -------------------------------------------------------
-# 統合シートの列定義（TikTokエクスポート形式準拠）
-# options があれば → プルダウン、なければ → テキスト入力
+# 統合シートの列定義
+# required=True → ヘッダーを赤文字
+# options → プルダウン（Noneの場合は動的に外から設定）
 # -------------------------------------------------------
 UNIFIED_COLUMNS: list[dict] = [
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # 【キャンペーン】
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # ━━━ キャンペーン ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     {
         "name": "キャンペーン名",
         "section": "campaign",
         "width": 220,
+        "required": True,
     },
     {
         "name": "目的",
         "section": "campaign",
         "width": 160,
+        "required": True,
         "options": [
-            "Sales", "Traffic", "Reach", "Video Views",
-            "App Installs", "Lead Generation", "Followers",
+            "コンバージョン", "トラフィック", "リーチ", "動画視聴",
+            "アプリインストール", "リード獲得", "フォロワー獲得",
         ],
-        "note": "TikTok広告管理の目的\nSales=コンバージョン / Traffic=トラフィック\nVideo Views=動画視聴 / App Installs=アプリインストール",
+        "note": "コンバージョン=Sales / トラフィック=Traffic\n動画視聴=Video Views / アプリインストール=App Installs",
     },
     {
         "name": "キャンペーン予算タイプ",
         "section": "campaign",
-        "width": 160,
-        "options": ["Daily", "Lifetime", "No Limit"],
-        "note": "Daily=日予算 / Lifetime=総予算 / No Limit=無制限",
+        "width": 170,
+        "required": True,
+        "options": ["日予算", "総予算", "無制限"],
+        "note": "日予算=Daily / 総予算=Lifetime / 無制限=No Limit",
     },
     {
         "name": "キャンペーン予算",
         "section": "campaign",
         "width": 130,
-        "note": "予算タイプが「No Limit」の場合は空欄でOK（単位: 円）",
+        "note": "予算タイプが「無制限」の場合は空欄でOK（単位: 円）",
     },
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # 【広告グループ（広告セット）】
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # ━━━ 広告グループ（広告セット） ━━━━━━━━━━━━━━━━━━
     {
         "name": "広告セット名",
         "section": "adgroup",
         "width": 220,
+        "required": True,
     },
     {
         "name": "プレースメントタイプ",
         "section": "adgroup",
         "width": 160,
-        "options": ["Automatic", "Select"],
-        "note": "Automatic=自動配置 / Select=手動配置",
+        "options": ["自動", "手動"],
+        "note": "自動=Automatic（推奨） / 手動=Select",
     },
     {
         "name": "プレースメント",
         "section": "adgroup",
         "width": 160,
-        "note": "プレースメントタイプがSelectのときのみ入力\n例: TikTok, Pangle",
+        "note": "手動のときのみ入力\n例: TikTok, Pangle",
     },
     {
         "name": "TikTok ピクセル ID",
         "section": "adgroup",
-        "width": 180,
-        "note": "コンバージョン追跡用ピクセルID\n例: CVCI6QJC77UDL07BVQP0",
+        "width": 240,
+        "note": (
+            "連携済みピクセルをプルダウンから選択\n"
+            "形式: 「ピクセル名 [pixel_id]」\n"
+            "コンバージョン計測を使う場合は必須"
+        ),
+        # options は initialize_template で動的にセット
     },
     {
         "name": "ピクセルイベント",
         "section": "adgroup",
         "width": 130,
-        "note": "ピクセルのイベントコード（数値）\n例: 96 (CompletePayment)",
+        "note": "ピクセルのイベントコード（数値）\n例: 96 = CompletePayment（購入完了）",
     },
     {
         "name": "ユーザーリスト設定ID",
@@ -123,17 +127,16 @@ UNIFIED_COLUMNS: list[dict] = [
         "section": "adgroup",
         "width": 200,
         "note": (
-            "地域IDをカンマ区切りで入力（Lプレフィックスは不要）\n"
+            "地域IDをカンマ区切りで入力（Lプレフィックス不要）\n"
             "例: 1865694,1864226,...\n"
-            "空欄 = 日本（7709）が自動セットされます"
+            "空欄 = 日本（7709）を自動セット"
         ),
     },
     {
         "name": "性別",
         "section": "adgroup",
         "width": 100,
-        "options": ["All", "Male", "Female"],
-        "note": "All=すべて / Male=男性 / Female=女性",
+        "options": ["すべて", "男性", "女性"],
     },
     {
         "name": "年齢",
@@ -154,9 +157,9 @@ UNIFIED_COLUMNS: list[dict] = [
     {
         "name": "広告セット予算タイプ",
         "section": "adgroup",
-        "width": 160,
-        "options": ["Daily", "Lifetime", "No Limit", ""],
-        "note": "Daily=日予算 / Lifetime=総予算 / No Limit or 空欄=無制限",
+        "width": 170,
+        "options": ["日予算", "総予算", "無制限"],
+        "note": "空欄 = 無制限（キャンペーン予算に従う）",
     },
     {
         "name": "広告セット予算",
@@ -168,70 +171,70 @@ UNIFIED_COLUMNS: list[dict] = [
         "name": "開始時刻",
         "section": "adgroup",
         "width": 180,
-        "note": "形式: 2024/4/1 0:00 または 2024-04-01 00:00:00\n空欄 = 入稿時刻が自動セット",
+        "note": "形式: 2024/4/1 0:00 または 2024-04-01 00:00:00\n空欄 = 入稿時刻を自動セット",
     },
     {
         "name": "終了時刻",
         "section": "adgroup",
         "width": 180,
-        "note": "形式: 2024/7/31 23:59 または No Limit（空欄）\nNo Limit または空欄 = 終了なし",
+        "note": "形式: 2024/7/31 23:59\nNo Limit または空欄 = 終了なし",
     },
     {
         "name": "最適化の目標",
         "section": "adgroup",
         "width": 160,
-        "options": ["Conversion", "Click", "Reach", "Video Play", "Follow", "Impression"],
-        "note": "Conversion=コンバージョン / Click=クリック\nVideo Play=動画再生 / Follow=フォロー",
+        "options": ["コンバージョン", "クリック", "リーチ", "動画再生", "フォロー", "インプレッション"],
     },
     {
         "name": "課金イベント",
         "section": "adgroup",
         "width": 120,
+        "required": True,
         "options": ["oCPM", "CPM", "CPC", "CPV"],
         "note": "oCPM=最適化インプレッション / CPM=インプレッション\nCPC=クリック / CPV=動画再生",
     },
     {
         "name": "入札タイプ",
         "section": "adgroup",
-        "width": 140,
-        "options": ["Lowest Cost", "Cost Cap", "Bid Cap"],
-        "note": "Lowest Cost=自動入札（入札額不要）\nCost Cap / Bid Cap=手動入札（入札額必須）",
+        "width": 160,
+        "required": True,
+        "options": ["自動入札", "コストキャップ", "入札キャップ"],
+        "note": "自動入札=Lowest Cost（入札額不要）\nコストキャップ/入札キャップ=手動（入札額必須）",
     },
     {
         "name": "入札",
         "section": "adgroup",
         "width": 100,
-        "note": "入札タイプが Cost Cap / Bid Cap のときのみ入力（単位: 円）",
+        "note": "コストキャップ/入札キャップのときのみ入力（単位: 円）",
     },
     {
         "name": "フリークエンシー上限",
         "section": "adgroup",
-        "width": 140,
-        "note": "1ユーザーへの最大表示回数\n例: 2 （2回/7日など）",
+        "width": 150,
+        "note": "1ユーザーへの最大表示回数（例: 2）",
     },
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # 【広告】
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # ━━━ 広告 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     {
         "name": "広告名",
         "section": "ad",
         "width": 200,
+        "required": True,
     },
     {
         "name": "広告フォーマット",
         "section": "ad",
         "width": 140,
-        "options": ["Single video", "Image", "Spark Ads"],
-        "note": "Single video=単一動画 / Image=画像広告 / Spark Ads=スパーク広告",
+        "required": True,
+        "options": ["単一動画", "画像", "スパーク広告"],
     },
     {
         "name": "動画名",
         "section": "ad",
         "width": 200,
         "note": (
-            "TikTokクリエイティブライブラリの動画名（参照用）\n"
-            "★ 動画を新規アップロードする場合は「Google Drive動画URL」を使用してください"
+            "TikTokクリエイティブライブラリの動画名\n"
+            "新規アップロードは「Google Drive動画URL」を使用"
         ),
     },
     {
@@ -239,7 +242,7 @@ UNIFIED_COLUMNS: list[dict] = [
         "section": "ad",
         "width": 260,
         "note": (
-            "Google DriveのファイルURL（「動画名」で既存動画を指定しない場合に自動アップロード）\n"
+            "Google DriveのファイルURL（動画名が空の場合に自動アップロード）\n"
             "例: https://drive.google.com/file/d/xxxxx/view\n"
             "⚠️ サービスアカウントとファイルを共有してください:\n"
             "tiktok-ads-tool@winged-vigil-371710.iam.gserviceaccount.com"
@@ -254,19 +257,15 @@ UNIFIED_COLUMNS: list[dict] = [
     {
         "name": "CTAタイプ",
         "section": "ad",
-        "width": 160,
+        "width": 180,
         "options": [
-            "Learn More", "Shop Now", "Download",
-            "Apply Now", "Book Now", "Contact Us",
-            "Sign Up", "Watch Now", "Play Game",
-            "View More", "Order Now", "Get Now",
-            "Dynamic",
+            "詳しくはこちら", "今すぐ購入", "アプリをダウンロード",
+            "今すぐ申し込む", "今すぐ予約", "お問い合わせ",
+            "今すぐ登録", "今すぐ視聴", "今すぐプレイ",
+            "詳細を見る", "今すぐ注文", "今すぐ入手",
+            "ダイナミック（自動）",
         ],
-        "note": (
-            "CTA（コール・トゥ・アクション）\n"
-            "Dynamic = TikTokが自動で最適なCTAを選択\n"
-            "Learn More = 詳しくはこちら"
-        ),
+        "note": "ダイナミック（自動）= TikTokが最適なCTAを自動選択",
     },
     {
         "name": "Web URL",
@@ -278,17 +277,18 @@ UNIFIED_COLUMNS: list[dict] = [
         "name": "アイデンティティタイプ",
         "section": "ad",
         "width": 180,
-        "options": ["TTBC Authorized Post", "CUSTOM_USER", "AUTH_CODE"],
-        "note": (
-            "TikTokアカウントのアイデンティティタイプ\n"
-            "TTBC Authorized Post = BC認証済みアカウント"
-        ),
+        "options": ["BC認証済みTikTok", "カスタムユーザー", "認証コード"],
+        "note": "BC認証済みTikTok = TTBC Authorized Post（最も一般的）",
     },
     {
         "name": "アイデンティティID",
         "section": "ad",
-        "width": 240,
-        "note": "アイデンティティのID（「id:」プレフィックスは不要）\n例: f3fcd787-c94d-5b86-a8d4-49740e624dcd",
+        "width": 260,
+        "note": (
+            "連携済みTikTokアカウントをプルダウンから選択\n"
+            "形式: 「アカウント名 [identity_id]」"
+        ),
+        # options は initialize_template で動的にセット
     },
     {
         "name": "インプレッショントラッキング URL",
@@ -303,9 +303,7 @@ UNIFIED_COLUMNS: list[dict] = [
         "note": "クリック計測用サードパーティトラッキングURL（省略可）",
     },
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # 【結果（自動入力）】
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # ━━━ 結果（自動入力） ━━━━━━━━━━━━━━━━━━━━━━━━━━━
     {
         "name": "ステータス",
         "section": "result",
@@ -316,19 +314,19 @@ UNIFIED_COLUMNS: list[dict] = [
         "name": "キャンペーンID",
         "section": "result",
         "width": 180,
-        "note": "入稿後に自動入力。既存IDを書いておくと再作成をスキップします",
+        "note": "入稿後に自動入力。既存IDを書いておくと再作成をスキップ",
     },
     {
         "name": "広告セット ID",
         "section": "result",
         "width": 180,
-        "note": "入稿後に自動入力。既存IDを書いておくと再作成をスキップします",
+        "note": "入稿後に自動入力。既存IDを書いておくと再作成をスキップ",
     },
     {
         "name": "広告ID",
         "section": "result",
         "width": 180,
-        "note": "入稿後に自動入力。既存IDを書いておくと再入稿をスキップします",
+        "note": "入稿後に自動入力。既存IDを書いておくと再入稿をスキップ",
     },
     {
         "name": "エラー内容",
@@ -338,22 +336,16 @@ UNIFIED_COLUMNS: list[dict] = [
     },
 ]
 
-# 列名一覧（シート読み込み時の参照用）
 COLUMN_NAMES = [c["name"] for c in UNIFIED_COLUMNS]
 
 
 class GoogleSheetsManager:
-    """Google Sheets 統合シート管理"""
 
     def __init__(self, spreadsheet_url: str, credentials_dict: dict):
         self.spreadsheet_url = spreadsheet_url
         self.credentials_dict = credentials_dict
         self._gc = None
         self._ss = None
-
-    # -------------------------------------------------------
-    # 接続
-    # -------------------------------------------------------
 
     def _client(self):
         if self._gc is None:
@@ -379,53 +371,121 @@ class GoogleSheetsManager:
             return ss.worksheet(SHEET_NAME)
         except Exception:
             if create:
-                ws = ss.add_worksheet(
+                return ss.add_worksheet(
                     title=SHEET_NAME,
                     rows=1000,
-                    cols=len(UNIFIED_COLUMNS) + 2,
+                    cols=len(UNIFIED_COLUMNS) + 5,
                 )
-                return ws
             raise
 
     # -------------------------------------------------------
     # テンプレート初期化
     # -------------------------------------------------------
 
-    def initialize_template(self):
+    def initialize_template(
+        self,
+        pixel_options: list[str] | None = None,
+        identity_id_options: list[str] | None = None,
+    ):
         """
-        統合シートを作成（既存は上書き）し、
-        ヘッダー色・プルダウン・列幅・セルメモを一括設定する
+        統合シートを完全リセットして再作成。
+
+        Args:
+            pixel_options: ["ピクセル名 [pixel_id]", ...] TikTok APIから取得
+            identity_id_options: ["アカウント名 [identity_id]", ...] TikTok APIから取得
         """
         ss = self._spreadsheet()
 
-        # シートが既にあれば削除して再作成
+        # ── シートの取得または作成 ──
         try:
-            existing = ss.worksheet(SHEET_NAME)
-            existing.clear()
-            ws = existing
-            logger.info(f"既存シートをクリア: {SHEET_NAME}")
+            ws = ss.worksheet(SHEET_NAME)
+            logger.info(f"既存シートを完全リセット: {SHEET_NAME}")
         except Exception:
             ws = ss.add_worksheet(
                 title=SHEET_NAME,
                 rows=1000,
-                cols=len(UNIFIED_COLUMNS) + 2,
+                cols=len(UNIFIED_COLUMNS) + 5,
             )
-            logger.info(f"シート作成: {SHEET_NAME}")
+            logger.info(f"シート新規作成: {SHEET_NAME}")
 
-        # ── 1. ヘッダー行を書き込む ──
-        ws.append_row(COLUMN_NAMES, value_input_option="RAW")
-
-        # ── 2. Google Sheets API で一括フォーマット ──
         sheet_id = ws.id
+
+        # ── 列定義に動的オプションをマージ ──
+        col_defs = []
+        for col in UNIFIED_COLUMNS:
+            col_copy = dict(col)
+            if col["name"] == "TikTok ピクセル ID" and pixel_options:
+                col_copy["options"] = pixel_options
+            if col["name"] == "アイデンティティID" and identity_id_options:
+                col_copy["options"] = identity_id_options
+            col_defs.append(col_copy)
+
+        # ── 全操作を1回のbatch_updateに統合（API呼び出し回数を最小化） ──
         requests = []
 
-        for col_idx, col_def in enumerate(UNIFIED_COLUMNS):
-            section = col_def["section"]
-            color = SECTION_COLORS[section]
+        # [1] シート全体クリア（値・書式・バリデーション）
+        requests.append({
+            "updateCells": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": 0,
+                    "endRowIndex": 1000,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": 200,
+                },
+                "fields": "userEnteredValue,userEnteredFormat,dataValidation,note",
+            }
+        })
 
-            # ヘッダーセルの背景色・太字
+        # [2] ヘッダー行の値をセット
+        requests.append({
+            "updateCells": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": 0,
+                    "endRowIndex": 1,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": len(col_defs),
+                },
+                "rows": [{
+                    "values": [
+                        {"userEnteredValue": {"stringValue": col["name"]}}
+                        for col in col_defs
+                    ]
+                }],
+                "fields": "userEnteredValue",
+            }
+        })
+
+        # [3] 各列の書式・バリデーション・列幅・メモ
+        for col_idx, col_def in enumerate(col_defs):
+            section    = col_def["section"]
+            color      = SECTION_COLORS[section]
+            required   = col_def.get("required", False)
+            text_color = REQUIRED_TEXT_COLOR if required else NORMAL_TEXT_COLOR
+            note_text  = col_def.get("note", "")
+
+            # ヘッダーセルの書式（必須=赤文字）+ メモ
+            header_cell: dict = {
+                "userEnteredFormat": {
+                    "backgroundColor": color,
+                    "textFormat": {
+                        "bold": True,
+                        "fontSize": 10,
+                        "foregroundColor": text_color,
+                    },
+                    "horizontalAlignment": "CENTER",
+                    "verticalAlignment": "MIDDLE",
+                    "wrapStrategy": "WRAP",
+                },
+            }
+            header_fields = "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy)"
+            if note_text:
+                header_cell["note"] = note_text
+                header_fields += ",note"
+
             requests.append({
-                "repeatCell": {
+                "updateCells": {
                     "range": {
                         "sheetId": sheet_id,
                         "startRowIndex": 0,
@@ -433,21 +493,13 @@ class GoogleSheetsManager:
                         "startColumnIndex": col_idx,
                         "endColumnIndex": col_idx + 1,
                     },
-                    "cell": {
-                        "userEnteredFormat": {
-                            "backgroundColor": color,
-                            "textFormat": {"bold": True, "fontSize": 10},
-                            "horizontalAlignment": "CENTER",
-                            "verticalAlignment": "MIDDLE",
-                            "wrapStrategy": "WRAP",
-                        }
-                    },
-                    "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy)",
+                    "rows": [{"values": [header_cell]}],
+                    "fields": header_fields,
                 }
             })
 
             # データ行の背景色（薄め）
-            data_color = {k: min(1.0, 0.95 + v * 0.05) for k, v in color.items()}
+            data_color = {k: min(1.0, 0.93 + v * 0.07) for k, v in color.items()}
             requests.append({
                 "repeatCell": {
                     "range": {
@@ -458,16 +510,14 @@ class GoogleSheetsManager:
                         "endColumnIndex": col_idx + 1,
                     },
                     "cell": {
-                        "userEnteredFormat": {
-                            "backgroundColor": data_color,
-                        }
+                        "userEnteredFormat": {"backgroundColor": data_color}
                     },
                     "fields": "userEnteredFormat(backgroundColor)",
                 }
             })
 
             # プルダウン設定
-            opts = [o for o in col_def.get("options", []) if o != ""]
+            opts = [o for o in col_def.get("options", []) if o and o != ""]
             if opts:
                 requests.append({
                     "setDataValidation": {
@@ -481,10 +531,7 @@ class GoogleSheetsManager:
                         "rule": {
                             "condition": {
                                 "type": "ONE_OF_LIST",
-                                "values": [
-                                    {"userEnteredValue": v}
-                                    for v in opts
-                                ],
+                                "values": [{"userEnteredValue": v} for v in opts],
                             },
                             "showCustomUi": True,
                             "strict": False,
@@ -506,7 +553,7 @@ class GoogleSheetsManager:
                 }
             })
 
-        # ヘッダー行を固定
+        # [4] ヘッダー行を固定
         requests.append({
             "updateSheetProperties": {
                 "properties": {
@@ -517,35 +564,21 @@ class GoogleSheetsManager:
             }
         })
 
+        # ── 1回のAPIコールで全操作を完了 ──
         ss.batch_update({"requests": requests})
+        logger.info(f"batch_update完了: {len(requests)}件のリクエスト")
 
-        # ── 3. セルメモを追加 ──
-        notes = {}
-        for col_idx, col_def in enumerate(UNIFIED_COLUMNS):
-            if col_def.get("note"):
-                import gspread.utils as gu
-                cell_a1 = gu.rowcol_to_a1(1, col_idx + 1)
-                notes[cell_a1] = col_def["note"]
-
-        if notes:
-            for cell_a1, note in notes.items():
-                ws.update_note(cell_a1, note)
-
-        logger.success(f"✅ テンプレートシート初期化完了: {SHEET_NAME}")
+        logger.success(f"✅ テンプレートシート初期化完了: {SHEET_NAME} ({len(COLUMN_NAMES)}列)")
 
     # -------------------------------------------------------
     # 読み込み
     # -------------------------------------------------------
 
     def read_data(self) -> pd.DataFrame:
-        """統合シートを DataFrame として読み込む"""
         ws = self._worksheet()
         records = ws.get_all_records(expected_headers=COLUMN_NAMES)
         df = pd.DataFrame(records) if records else pd.DataFrame(columns=COLUMN_NAMES)
-        # 空行（全列が空文字）を除外
-        non_empty = df.apply(
-            lambda row: row.astype(str).str.strip().any(), axis=1
-        )
+        non_empty = df.apply(lambda row: row.astype(str).str.strip().any(), axis=1)
         df = df[non_empty].reset_index(drop=True)
         logger.info(f"データ読み込み: {len(df)}行")
         return df
@@ -555,21 +588,6 @@ class GoogleSheetsManager:
     # -------------------------------------------------------
 
     def write_results(self, results: list[dict]):
-        """
-        入稿結果をシートに書き戻す
-
-        results: [
-          {
-            "row_index": int,  # 1始まり（データ行番号、ヘッダーを除く）
-            "status": str,
-            "campaign_id": str,
-            "adgroup_id": str,
-            "ad_id": str,
-            "video_id": str,   # Drive経由アップロード時: "動画名"列に書き戻す
-            "error": str,
-          }
-        ]
-        """
         if not results:
             return
 
@@ -584,16 +602,16 @@ class GoogleSheetsManager:
             except ValueError:
                 return None
 
-        col_status   = col_of("ステータス")
-        col_camp_id  = col_of("キャンペーンID")
-        col_ag_id    = col_of("広告セット ID")
-        col_ad_id    = col_of("広告ID")
-        col_err      = col_of("エラー内容")
-        col_video    = col_of("動画名")   # Drive経由アップロード時にvideo_idを書き戻す
+        col_status  = col_of("ステータス")
+        col_camp_id = col_of("キャンペーンID")
+        col_ag_id   = col_of("広告セット ID")
+        col_ad_id   = col_of("広告ID")
+        col_err     = col_of("エラー内容")
+        col_video   = col_of("動画名")
 
         cells: list[gspread.Cell] = []
         for r in results:
-            sheet_row = r["row_index"] + 1  # +1 はヘッダー行分
+            sheet_row = r["row_index"] + 1
             if col_status:
                 cells.append(gspread.Cell(sheet_row, col_status, r.get("status", "")))
             if col_camp_id:
@@ -604,7 +622,6 @@ class GoogleSheetsManager:
                 cells.append(gspread.Cell(sheet_row, col_ad_id, r.get("ad_id", "")))
             if col_err:
                 cells.append(gspread.Cell(sheet_row, col_err, r.get("error", "")))
-            # Drive経由でアップロードしたvideo_idを「動画名」列に書き戻す
             if col_video and r.get("video_id"):
                 cells.append(gspread.Cell(sheet_row, col_video, r.get("video_id", "")))
 

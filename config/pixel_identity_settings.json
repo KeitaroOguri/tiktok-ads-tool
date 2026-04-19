@@ -1,0 +1,32 @@
+{
+  "7413263177252274192": {
+    "pixels": [
+      {
+        "name": "テスト",
+        "pixel_id": "gahglhalglaknlgaknln"
+      }
+    ],
+    "identities": [
+      {
+        "name": "アイデンティティテスト",
+        "identity_id": "hlgjagnljanlgnal",
+        "identity_type": "BC_AUTH_TT"
+      }
+    ]
+  },
+  "7413265081846480912": {
+    "pixels": [
+      {
+        "name": "test pix2026/04/18",
+        "pixel_id": "D7HP1KJC77UC01EGLPJ0"
+      }
+    ],
+    "identities": [
+      {
+        "name": "はな",
+        "identity_id": "7512219736231477265",
+        "identity_type": "BC_AUTH_TT"
+      }
+    ]
+  }
+}

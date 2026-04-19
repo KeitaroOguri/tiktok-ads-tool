@@ -53,16 +53,16 @@ class BusinessManager:
 
     def fetch_ad_accounts(self, bc_name: str) -> list[dict]:
         """
-        BC配下の広告アカウントをAPIから取得してYAMLに保存
-        Step1: /oauth2/advertiser/get/ で全アカウントID取得
-        Step2: /advertiser/info/ で詳細取得しBC IDで絞り込み
+        BC配下の広告アカウントをAPIから取得してYAMLに保存。
+        自社作成アカウントも他BCから共有されたアカウントも全て取得する。
         """
+        import json
         token = self.auth.get_valid_token(bc_name)
         bc_id = self._get_bc_id(bc_name)
         client = TikTokClient(access_token=token)
 
         try:
-            # Step1: 全アカウントIDを取得
+            # Step1: このOAuthトークンでアクセスできる全アカウントIDを取得
             logger.info(f"[{bc_name}] 全アカウントID取得中...")
             all_ids_data = client.get_all("/oauth2/advertiser/get/", params={
                 "app_id": self.auth.app_id,
@@ -72,45 +72,81 @@ class BusinessManager:
             all_ids = [i for i in all_ids if i]
             logger.info(f"[{bc_name}] 合計 {len(all_ids)} アカウントID取得")
 
+            if not all_ids:
+                logger.warning(f"[{bc_name}] 取得できるアカウントがありません")
+                return []
+
             # Step2: 100件ずつ /advertiser/info/ で詳細取得
-            import json
             logger.info(f"[{bc_name}] アカウント詳細取得中...")
             detailed = []
             for i in range(0, len(all_ids), 100):
-                chunk = all_ids[i:i+100]
+                chunk = all_ids[i:i + 100]
                 try:
                     info_data = client.get("/advertiser/info/", params={
                         "advertiser_ids": json.dumps(chunk),
-                        "fields": json.dumps(["advertiser_id", "name", "status", "currency", "timezone", "owner_bc_id"]),
+                        "fields": json.dumps([
+                            "advertiser_id", "name", "status",
+                            "currency", "timezone", "owner_bc_id",
+                        ]),
                     })
                     items = info_data.get("list", info_data) if isinstance(info_data, dict) else info_data
                     if isinstance(items, list):
                         detailed.extend(items)
                 except Exception as e:
-                    logger.warning(f"詳細取得失敗 (chunk {i//100+1}): {e}")
+                    logger.warning(f"詳細取得失敗 (chunk {i // 100 + 1}): {e}")
 
-            # Step3: owner_bc_id で絞り込み
-            if detailed:
-                sample = detailed[0]
-                logger.debug(f"レスポンスサンプル keys: {list(sample.keys())}")
-                owner_bc_ids_found = list(set(str(a.get("owner_bc_id", "")) for a in detailed if a.get("owner_bc_id")))
-                logger.info(f"レスポンス内のowner_bc_id一覧(先頭10件): {owner_bc_ids_found[:10]}")
-                logger.info(f"YAMLのbc_id: {bc_id}")
+            # Step3: owner_bc_id で所有元BCを分類してログ出力（絞り込みはしない）
+            # 自社BCのアカウント: owner_bc_id == bc_id
+            # 共有アカウント: owner_bc_id が別BCのもの → 除外せず全件含める
+            owned = [a for a in detailed if str(a.get("owner_bc_id", "")) == str(bc_id)]
+            shared = [a for a in detailed if str(a.get("owner_bc_id", "")) != str(bc_id)]
+            logger.info(
+                f"[{bc_name}] 自社BC所有: {len(owned)}件 / "
+                f"他BCから共有: {len(shared)}件 / 合計: {len(detailed)}件"
+            )
+            if shared:
+                shared_bc_ids = list(set(str(a.get("owner_bc_id", "")) for a in shared))
+                logger.info(f"[{bc_name}] 共有元BC: {shared_bc_ids}")
 
-            has_bc_id = any(a.get("owner_bc_id") for a in detailed)
-            if has_bc_id and bc_id and bc_id != "BC_XXXXXXX":
-                accounts = [a for a in detailed if str(a.get("owner_bc_id", "")) == str(bc_id)]
-                logger.info(f"[{bc_name}] BC {bc_id} で絞り込み: {len(accounts)}件")
-            else:
-                accounts = detailed
-                logger.warning(f"[{bc_name}] owner_bc_idで絞り込めないため全件表示: {len(accounts)}件")
+            accounts = detailed  # 共有アカウントも含めて全件保存
 
-            # YAMLに保存
+            # YAMLに保存（手動追加分を上書きしないようにマージ）
             self._save_ad_accounts(bc_name, accounts)
             logger.success(f"✅ [{bc_name}] 広告アカウント {len(accounts)}件 取得・保存完了")
             return accounts
         finally:
             client.close()
+
+    def add_ad_account_manually(
+        self,
+        bc_name: str,
+        advertiser_id: str,
+        account_name: str,
+        currency: str = "JPY",
+    ) -> bool:
+        """
+        APIで取得できない広告アカウントを手動でYAMLに追加する。
+        既に同じ advertiser_id が存在する場合はスキップ。
+        """
+        config = self._load_config()
+        for bc in config.get("business_centers", []):
+            if bc.get("name") != bc_name:
+                continue
+            existing_ids = [str(a.get("advertiser_id", "")) for a in bc.get("ad_accounts", [])]
+            if str(advertiser_id) in existing_ids:
+                logger.warning(f"[{bc_name}] advertiser_id {advertiser_id} は既に登録済みです")
+                return False
+            bc.setdefault("ad_accounts", []).append({
+                "advertiser_id": str(advertiser_id),
+                "name": account_name,
+                "status": "MANUAL",
+                "currency": currency,
+                "bc_id": "",
+            })
+            self._save_config(config)
+            logger.success(f"✅ [{bc_name}] 手動追加: {account_name} ({advertiser_id})")
+            return True
+        raise ValueError(f"BC '{bc_name}' が見つかりません")
 
     def list_ad_accounts(self, bc_name: Optional[str] = None) -> list[dict]:
         """
