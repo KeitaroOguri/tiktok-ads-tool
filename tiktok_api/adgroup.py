@@ -25,19 +25,24 @@ class AdGroupManager:
         campaign_ids: Optional[list[str]] = None,
         adgroup_ids: Optional[list[str]] = None,
         status: Optional[str] = None,
+        operation_status: Optional[list[str]] = None,
     ) -> list[dict]:
         """広告グループ一覧取得"""
-        filtering = {}
+        import json
+        # httpx がリストを ?operation_status=ENABLE&operation_status=DISABLE に展開する
+        params: dict = {
+            "advertiser_id": self.advertiser_id,
+            "operation_status": operation_status or ["ENABLE", "DISABLE"],
+        }
+        filtering: dict = {}
         if campaign_ids:
             filtering["campaign_ids"] = campaign_ids
         if adgroup_ids:
             filtering["adgroup_ids"] = adgroup_ids
         if status:
             filtering["primary_status"] = status
-
-        params = {"advertiser_id": self.advertiser_id}
         if filtering:
-            params["filtering"] = filtering
+            params["filtering"] = json.dumps(filtering)
 
         items = self.client.get_all("/adgroup/get/", params=params)
         logger.info(f"広告グループ取得: {len(items)}件")
@@ -84,19 +89,86 @@ class AdGroupManager:
         logger.success(f"✅ 広告グループ更新: {adgroup_id}")
         return True
 
-    def update_status(self, adgroup_ids: list[str], status: str) -> bool:
+    def update_status(self, adgroup_ids: list[str], status: str) -> list[str]:
         """
-        広告グループステータス一括変更
+        広告グループステータス一括変更。
+        Smart Plus 非対応の場合は1件ずつ試行し、Smart Plus 専用エンドポイントを使う。
         status: ENABLE / DISABLE / DELETE
+        Returns: 実際に変更できた adgroup_id のリスト
         """
+        from .client import TikTokAPIError
+
         body = {
             "advertiser_id": self.advertiser_id,
             "adgroup_ids": adgroup_ids,
-            "opt_status": status,
+            "operation_status": status,
         }
-        self.client.post("/adgroup/status/update/", body=body)
-        logger.success(f"✅ 広告グループステータス変更: {len(adgroup_ids)}件 → {status}")
-        return True
+        try:
+            self.client.post("/adgroup/status/update/", body=body)
+            logger.success(f"✅ 広告グループステータス変更: {len(adgroup_ids)}件 → {status}")
+            return adgroup_ids
+        except TikTokAPIError as e:
+            # Smart Plus が混在する場合は1件ずつ試行
+            if "Smart Plus" in str(e) or e.code == 40002:
+                logger.warning(f"一括更新失敗（Smart Plus混在の可能性）→ 1件ずつ試行: {e}")
+                succeeded = []
+                for ag_id in adgroup_ids:
+                    if self._update_status_single(ag_id, status):
+                        succeeded.append(ag_id)
+                logger.success(
+                    f"✅ 広告グループステータス変更: {len(succeeded)}/{len(adgroup_ids)}件 → {status}"
+                )
+                return succeeded
+            raise
+
+    def _update_status_single(self, adgroup_id: str, status: str) -> bool:
+        """
+        1件の広告グループのステータスを変更する。
+        通常エンドポイントで失敗した場合は Smart Plus 専用エンドポイントを試みる。
+        Returns: True=成功 / False=スキップ
+        """
+        from .client import TikTokAPIError
+
+        # ① 通常エンドポイントで試行
+        try:
+            self.client.post("/adgroup/status/update/", body={
+                "advertiser_id": self.advertiser_id,
+                "adgroup_ids": [adgroup_id],
+                "operation_status": status,
+            })
+            return True
+        except TikTokAPIError as e1:
+            if "Smart Plus" not in str(e1) and e1.code != 40002:
+                logger.warning(f"スキップ [{adgroup_id}]: {e1.message}")
+                return False
+
+        # ② Smart Plus 専用エンドポイントで再試行（パラメータ名の違いで複数パターン試行）
+        logger.info(f"Smart Plus専用エンドポイントで再試行: {adgroup_id}")
+
+        # 試行パターン: (adgroup_idキー, ステータスフィールド名)
+        candidates = [
+            {"adgroup_id": adgroup_id, "operation_status": status},         # 単数 + 新フィールド
+            {"adgroup_ids": [adgroup_id], "operation_status": status},      # 複数リスト + 新フィールド
+            {"adgroup_id": adgroup_id, "opt_status": status},               # 単数 + 旧フィールド
+            {"adgroup_ids": [adgroup_id], "opt_status": status},            # 複数リスト + 旧フィールド
+        ]
+
+        for i, extra in enumerate(candidates):
+            body = {"advertiser_id": self.advertiser_id, **extra}
+            try:
+                self.client.post("/smart_plus/adgroup/status/update/", body=body)
+                logger.success(
+                    f"✅ Smart Plus広告グループ変更成功 (パターン{i+1}): {adgroup_id} → {status}"
+                )
+                return True
+            except TikTokAPIError as e2:
+                logger.debug(
+                    f"Smart Plus パターン{i+1} 失敗 [{adgroup_id}]: [{e2.code}] {e2.message}"
+                )
+                continue
+
+        logger.warning(f"Smart Plus専用エンドポイント 全パターン失敗 [{adgroup_id}] → スキップ")
+        return False
 
     # -------------------------------------------------------
     # 複製

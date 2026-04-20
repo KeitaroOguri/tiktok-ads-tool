@@ -94,8 +94,12 @@ class TikTokClient:
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 if method == "GET":
+                    # デバッグ: 実際に送信するURLを確認
+                    req = self._http.build_request("GET", path, params=params)
+                    logger.debug(f"[API REQUEST] GET {req.url}")
                     resp = self._http.get(path, params=params)
                 else:
+                    logger.debug(f"[API REQUEST] POST {path} body={list(body.keys()) if body else []}")
                     resp = self._http.post(path, json=body)
 
                 resp.raise_for_status()
@@ -116,6 +120,8 @@ class TikTokClient:
                     time.sleep(wait)
                     continue
                 else:
+                    # デバッグ用: フルレスポンスをログ出力
+                    logger.debug(f"[API ERROR] code={code} message={data.get('message')} full={data}")
                     raise TikTokAPIError(code, data.get("message", "不明なエラー"), data.get("request_id", ""))
 
             except httpx.HTTPStatusError as e:

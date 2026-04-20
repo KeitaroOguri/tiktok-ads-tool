@@ -351,27 +351,13 @@ def run_rule(rule: dict, access_token: str) -> dict:
         rule_stopped_ids: list[str] = list(rule.get("_rule_stopped_ids", []))
 
         # ---- 日次リセット ----
-        # 評価は1日単位。日付が変わったら前日に停止したグループを再開し状態をリセットする
-        if last_reset_date != today_str and rule_stopped_ids:
+        # 評価は1日単位。日付が変わったら内部状態をリセットして当日の評価を開始する。
+        # 停止グループの再開は別ルールで管理するため自動再開はしない。
+        if last_reset_date != today_str:
             logger.info(
                 f"[{rule['name']}] 日次リセット ({last_reset_date} → {today_str}): "
-                f"{len(rule_stopped_ids)}件を再開"
+                f"評価状態をリセット（再開は行わない）"
             )
-            try:
-                adgroup_mgr.update_status(rule_stopped_ids, "ENABLE")
-            except Exception as e:
-                logger.warning(f"日次リセット再開失敗（続行）: {e}")
-            # Slack通知（再開があれば）
-            if rule.get("slack_webhook_url"):
-                try:
-                    SlackNotifier(rule["slack_webhook_url"]).send(
-                        text=(
-                            f"🌅 自動運用 日次リセット [{rule['name']}]: "
-                            f"{len(rule_stopped_ids)}件の広告グループを再開しました"
-                        )
-                    )
-                except Exception:
-                    pass
             rule_stopped_ids = []
             update_rule(rule["id"], _rule_stopped_ids=[], _last_reset_date=today_str)
 
@@ -424,26 +410,42 @@ def run_rule(rule: dict, access_token: str) -> dict:
                 "reason": _build_reason(spend, conversions, rule["tcpa_target"], action),
             })
 
-        # ステータス変更実行
+        # ステータス変更実行（Smart Plus など非対応は自動スキップ）
+        succeeded_disable: list[str] = []
+        succeeded_enable: list[str] = []
+        skipped_disable: list[str] = []
+        skipped_enable: list[str] = []
+
         if disable_ids:
-            adgroup_mgr.update_status(disable_ids, "DISABLE")
+            succeeded_disable = adgroup_mgr.update_status(disable_ids, "DISABLE")
+            skipped_disable = [i for i in disable_ids if i not in succeeded_disable]
         if enable_ids:
-            adgroup_mgr.update_status(enable_ids, "ENABLE")
+            succeeded_enable = adgroup_mgr.update_status(enable_ids, "ENABLE")
+            skipped_enable = [i for i in enable_ids if i not in succeeded_enable]
 
-        # rule_stopped_ids を更新
-        rule_stopped_ids = [i for i in rule_stopped_ids if i not in enable_ids]
-        rule_stopped_ids.extend(disable_ids)
+        # スキップされた広告グループの action を更新
+        for r in results:
+            if r["adgroup_id"] in skipped_disable or r["adgroup_id"] in skipped_enable:
+                r["action"] = "SKIPPED"
+                r["reason"] = "Smart Plus専用エンドポイントも失敗のためスキップ"
 
+        # rule_stopped_ids を更新（実際に変更できたIDのみ反映）
+        rule_stopped_ids = [i for i in rule_stopped_ids if i not in succeeded_enable]
+        rule_stopped_ids.extend(succeeded_disable)
+
+        skipped_count = len(skipped_disable) + len(skipped_enable)
+        no_change_count = len(results) - len(succeeded_disable) - len(succeeded_enable) - skipped_count
         summary = (
-            f"停止: {len(disable_ids)}件 / "
-            f"再開: {len(enable_ids)}件 / "
-            f"変更なし: {len(results) - len(disable_ids) - len(enable_ids)}件"
+            f"停止: {len(succeeded_disable)}件 / "
+            f"再開: {len(succeeded_enable)}件 / "
+            f"変更なし: {no_change_count}件"
+            + (f" / スキップ(SmartPlus): {skipped_count}件" if skipped_count else "")
         )
         log_entry["results"] = results
         log_entry["summary"] = summary
 
-        # Slack通知（変更があった場合のみ）
-        if rule.get("slack_webhook_url") and (disable_ids or enable_ids):
+        # Slack通知（実際に変更があった場合のみ）
+        if rule.get("slack_webhook_url") and (succeeded_disable or succeeded_enable or skipped_count):
             _send_slack(rule, log_entry)
 
         logger.success(f"✅ ルール実行完了 [{rule['name']}]: {summary}")
@@ -528,6 +530,7 @@ def _send_slack(rule: dict, log_entry: dict) -> None:
 
         stopped = [r for r in results if r["action"] == "DISABLE"]
         resumed = [r for r in results if r["action"] == "ENABLE"]
+        skipped = [r for r in results if r["action"] == "SKIPPED"]
 
         lines: list[str] = [f"*tCPA目標: {rule['tcpa_target']:,}円*\n"]
         if stopped:
@@ -538,6 +541,10 @@ def _send_slack(rule: dict, log_entry: dict) -> None:
             lines.append("▶️ *再開した広告グループ*")
             for r in resumed:
                 lines.append(f"  • {r['adgroup_name']}: {r['reason']}")
+        if skipped:
+            lines.append("⚠️ *スキップ（Smart Plus・API非対応）*")
+            for r in skipped:
+                lines.append(f"  • {r['adgroup_name']}")
 
         blocks = [
             {
